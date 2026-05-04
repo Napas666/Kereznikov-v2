@@ -121,27 +121,40 @@ def make_windowed(hwnd, w=1280, h=720):
 
 # ── СОСТОЯНИЕ ─────────────────────────────────────────────
 S   = {'aim': False, 'bhop': False, 'esp': False}
-CFG = {'fov': 180., 'strength': 12., 'head': True}
+CFG = {'strength': 8., 'head': True}
 
-# ── AIMBOT ────────────────────────────────────────────────
+CS_W, CS_H = 1280, 720   # размер окна CS (устанавливается автоматически)
+
+# ── AIMBOT (экранный подход — без кручения) ───────────────
+# Проецируем врага на экран через w2s и двигаем мышь к центру.
+# Если враг не виден — мышь не двигается. Никакого кручения.
 def aim_loop():
     while True:
         if S['aim'] and ok:
             try:
-                ca=get_angles(); src=my_pos(); bots=get_bots()
-                best=None; best_d=CFG['fov']
+                ca  = get_angles()
+                mp  = my_pos()
+                bots = get_bots()
+                cx, cy = CS_W // 2, CS_H // 2
+
+                best_dx = best_dy = None
+                best_d  = float('inf')
+
                 for pos in bots:
-                    tz=pos[2]+(64. if CFG['head'] else 0.)
-                    dx,dy,dz=pos[0]-src[0],pos[1]-src[1],tz-src[2]
-                    ta=(-math.degrees(math.atan2(dz,math.hypot(dx,dy))),
-                         math.degrees(math.atan2(dy,dx)))
-                    d=math.hypot(norm(ca[0]-ta[0]),norm(ca[1]-ta[1]))
-                    if d<best_d: best_d,best=d,ta
-                if best:
-                    dp=norm(best[0]-ca[0]); dy_=norm(best[1]-ca[1])
-                    k=CFG['strength']
-                    move_mouse(max(-120,min(120,dy_*k)),
-                               max(-120,min(120,-dp*k)))
+                    tz  = pos[2] + (64. if CFG['head'] else 0.)
+                    rel = (pos[0]-mp[0], pos[1]-mp[1], tz-mp[2])
+                    pr  = w2s(rel, ca, CS_W, CS_H)
+                    if not pr: continue          # враг не виден — пропуск
+                    sx, sy, dist = pr
+                    d = math.hypot(sx-cx, sy-cy)
+                    if d < best_d:
+                        best_d  = d
+                        best_dx = sx - cx        # сколько пикселей до центра
+                        best_dy = sy - cy
+
+                if best_dx is not None:
+                    k = CFG['strength'] * 0.06
+                    move_mouse(best_dx * k, best_dy * k)
             except: pass
         time.sleep(0.008)
 
@@ -189,6 +202,8 @@ def esp_loop():
     # Перечитываем позицию окна после изменения
     rc  = win32gui.GetWindowRect(cs_hwnd)
     W,H = rc[2]-rc[0], rc[3]-rc[1]
+    global CS_W, CS_H
+    CS_W, CS_H = W, H
 
     os.environ['SDL_VIDEO_WINDOW_POS'] = f"{rc[0]},{rc[1]}"
     sc = pygame.display.set_mode((W,H), pygame.NOFRAME|pygame.SRCALPHA)
@@ -305,10 +320,8 @@ def sld(lbl, hint, mn, mx, df, cb, fmt=lambda v:f"{int(v)}"):
     sl=ctk.CTkSlider(f,from_=mn,to=mx,command=_cb,button_color=AC,progress_color=AC)
     sl.set(df); sl.pack(fill="x",padx=12,pady=(2,10))
 
-sld("СИЛА АИМ","Медленно ← 1 ──── 30 → Резко",
-    1,30,12,lambda v:CFG.update({'strength':v}))
-sld("FOV","Узко ← 5 ───── 180 → Везде",
-    5,180,180,lambda v:CFG.update({'fov':v}),lambda v:f"{int(v)}°")
+sld("СИЛА АИМ","Медленно ← 1 ──── 30 → Резко (попробуй 8-15)",
+    1,30,8,lambda v:CFG.update({'strength':v}))
 
 tf=ctk.CTkFrame(root,fg_color=C1,corner_radius=10); tf.pack(fill="x",padx=14,pady=3)
 tr=ctk.CTkFrame(tf,fg_color="transparent"); tr.pack(fill="x",padx=12,pady=10)
